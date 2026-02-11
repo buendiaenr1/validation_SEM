@@ -1,8 +1,10 @@
 
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    RESUMEN DE LA VALIDACIÓN                         │
+│                    RESUMEN DE LA VALIDACIÓN                         
+|   Enrique R.P Buendia Lozada. 
+|   Benemérita Universidad Autónoma de Puebla, BUAP, México.
 ├─────────────────────────────────────────────────────────────────────┤
-│                                                                     
+│                                                                     │
 │  📊 MUESTRA:                                                         
 │     • N = 213 participantes                                     
 │     • 29 ítems en el cuestionario                                   
@@ -10,20 +12,18 @@
 │                                                                     
 │  📋 ADECUACIÓN MUESTRAL:                                             
 │     • KMO = 0.901 (Excelente)                  
-│     • Factores (Kaiser): 6 | Factores (Análisis Paralelo): 2         
+│     • Factores según Kaiser: 6                          
 │                                                                     
 │  🔧 RECODIFICACIÓN:                                                  
-│     • 2 ítems inversos recodificados                            
+│     • 2 ítems inversos identificados                            
 │                                                                     
 │  📈 ANÁLISIS FACTORIAL:                                              
-│     • 2 factores extraídos                                   
-│     • Varianza explicada: 30.6%                         
+│     • 6 factores extraídos                                   
+│     • Varianza explicada: 35.2%                         
 │                                                                     
 │  ✅ CONFIABILIDAD:                                                   
 │     • Alfa de Cronbach total: 0.912 (Excelente)   
 │                                                                     
-│  📐 MEJOR MODELO SEM: Unidimensional (Único modelo evaluado)   
-│
-│     • No disponible (Error en convergencia del modelo)                     │
-│                                                                     │
+│  📐 MEJOR MODELO SEM: Unidimensional                        
+││                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
