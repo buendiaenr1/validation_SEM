@@ -72,3 +72,11 @@ El cuestionario está bien validado. Tiene buena consistencia interna (confiable
 
 
 
+Principios:
+Mínimo 3-4 ítems por factor (para identificabilidad del modelo)
+Evitar ítems inversos si es posible (complican el modelo)
+Usar escala Likert coherente (ej: 1-5, de "Nunca" a "Siempre")
+
+<img width="656" height="305" alt="image" src="https://github.com/user-attachments/assets/9d6a2aca-76f1-4968-8b75-75a981de2499" />
+
+
