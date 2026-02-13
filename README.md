@@ -1,3 +1,9 @@
+# Instalar 7ZIP
+# descargar los 30 archivos validac1.exe.nnn
+# Usar la consola de 7zip, seleccionar validac1.exe.001 y seleccionar desempacar, automaticamente 7zip desempacará y juntara el archivo completo
+# buscar el archivo  validac1.exe que debe estar junto con datos.csv para que funcione al dar doble clic con el primer boton del ratón sobre el archivo exe.
+
+
 # validation_SEM
 Validar cuestionarios con ecuciones estructurales
 
