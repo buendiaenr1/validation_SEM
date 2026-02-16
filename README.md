@@ -86,3 +86,37 @@ Usar escala Likert coherente (ej: 1-5, de "Nunca" a "Siempre")
 <img width="656" height="305" alt="image" src="https://github.com/user-attachments/assets/9d6a2aca-76f1-4968-8b75-75a981de2499" />
 
 
+# 🔬 Explicación simple de cada índice
+1. χ² (Chi-cuadrado) - La prueba de "bondad de ajuste"
+Qué hace: Compara tu modelo contra los datos reales
+Truco: ¡Aquí NO queremos que sea significativo! (p > 0.05)
+Tu resultado: p = 0.08 → No significativo → ✅ Tu modelo se ajusta bien a los datos
+2. CFI (Comparative Fit Index) - "¿Qué tan bien explica mi modelo?"
+Rango: 0 a 1 (mientras más cerca de 1, mejor)
+Interpretación: Compara tu modelo contra un modelo "nulo" (sin relaciones)
+Tu resultado: 0.97 → Tu modelo explica el 97% mejor que no tener modelo
+Criterio: > 0.90 es aceptable, > 0.95 es excelente → ✅ Excelente
+3. TLI (Tucker-Lewis Index) - CFI "más honesto"
+Qué hace: Igual que CFI pero penaliza modelos muy complejos
+Por qué importa: Evita que metas muchas variables solo para "forzar" buen ajuste
+Tu resultado: 0.96 → ✅ Buen ajuste genuino, no es artificial por complejidad
+4. RMSEA (Root Mean Square Error of Approximation) - "¿Cuánto me equivoco?"
+Qué mide: Error promedio de predicción por grado de libertad
+Interpretación: Cuánto "falta" para que tu modelo sea perfecto
+Tu resultado: 0.05 → ✅ Error muy bajo (casi perfecto)
+Guía práctica:
+< 0.05 = excelente
+0.05-0.08 = bueno
+0.10 = problemático
+5. SRMR (Standardized Root Mean Square Residual) - "¿Cuánto difieren mis predicciones de la realidad?"
+Qué mide: Diferencia promedio entre correlaciones observadas y las que predice tu modelo
+Tu resultado: 0.04 → ✅ Diferencias mínimas entre predicción y realidad
+🎯 Conclusión
+Tu modelo tiene un ajuste EXCELENTE. Todos los índices indican que tu modelo teórico representa fielmente los datos observados. Es válido desde el punto de vista estadístico.
+💡 Analogía simple
+Imagina que tu modelo es un traje hecho a medida:
+χ²: ¿El traje se ve forzado? → No, se ve natural ✅
+CFI: ¿Qué tan bien cubre el cuerpo? → Cubre el 97% ✅
+TLI: ¿Es buen ajuste o tiene demasiados botones/costuras innecesarias? → Ajuste genuino ✅
+RMSEA: ¿Cuántos "pliegues" o arrugas tiene? → Casi ninguno ✅
+SRMR: ¿La tela se separa del cuerpo en algún lado? → No, pega perfecto ✅
