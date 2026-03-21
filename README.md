@@ -120,3 +120,38 @@ CFI: ¿Qué tan bien cubre el cuerpo? → Cubre el 97% ✅
 TLI: ¿Es buen ajuste o tiene demasiados botones/costuras innecesarias? → Ajuste genuino ✅
 RMSEA: ¿Cuántos "pliegues" o arrugas tiene? → Casi ninguno ✅
 SRMR: ¿La tela se separa del cuerpo en algún lado? → No, pega perfecto ✅
+
+# Para el caso de cuestionario dicotónico y un solo constructo val01_1f.py
+
+## Cálculo del Omega de McDonald
+
+### Configuración del análisis factorial:
+## python
+fa = FactorAnalyzer(n_factors=1, rotation=None, method='uls')
+fa.fit(df)
+
+Parámetros importantes:
+
+n_factors=1: Modelo unidimensional (todos los ítems miden un solo constructo)
+method='uls': Mínimos Cuadrados No Ponderados (robusto para datos dicotómicos)
+rotation=None: Sin rotación para mantener la estructura unidimensional
+
+# Para el usuario:
+Preparar datos:
+
+Formato CSV con separador punto y coma (;)
+Primera fila: nombres de variables
+Datos numéricos (0/1 para dicotómicos)
+### Tamaño muestral:
+Mínimo: 50 sujetos (con advertencia)
+Recomendado: >100 sujetos
+Ideal: >200 sujetos
+
+### Interpretación:
+
+Valores >0.70 indican consistencia aceptable
+
+Omega > Alfa sugiere mejor estimación
+
+Confiar más en Omega para datos dicotómicos
+
