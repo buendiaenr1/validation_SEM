@@ -20,6 +20,7 @@ Usar ambos = evidencia más sólida que cualquiera sola.
 | **IC 95% de CFI**         | Límite inferior > 0.90 | El modelo siempre ajusta bien          |
 | **IC 95% de RMSEA**       | Límite superior < 0.08 | El error de aproximación es bajo       |
 | **Estabilidad de cargas** | Todas con IC estrechos | Los ítems funcionan consistentemente   |
+
 Ejemplo:
    Item     Original   MediaBoot  SE       IC 95%                    Sesgo   
    ----------------------------------------------------------------------
@@ -28,6 +29,7 @@ Ejemplo:
    ...
    
    CFI: IC 95% = [0.982, 1.000] ✅ Robusto (>0.90)
+   
    RMSEA: IC 95% = [0.000, 0.045] ✅ Robusto (<0.08)
 
 
