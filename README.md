@@ -22,9 +22,13 @@ Usar ambos = evidencia más sólida que cualquiera sola.
 | **Estabilidad de cargas** | Todas con IC estrechos | Los ítems funcionan consistentemente   |
 
 Ejemplo:
-   Item     Original   MediaBoot  SE       IC 95%                    Sesgo   
+
+   Item     Original   MediaBoot  SE       IC 95%                    Sesgo
+   
    ----------------------------------------------------------------------
+   
    i1       0.662      0.658      0.045    [0.571, 0.745]            -0.004
+   
    i2       0.462      0.465      0.062    [0.348, 0.589]            +0.003
    ...
    
