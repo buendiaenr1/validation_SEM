@@ -6,6 +6,31 @@
 # Invarianza
   la invarianza se calcula cininvarianza.py   usando datos_invar.csv
 
+# Validación cruzada
+  la validaciòn se hace por dos métodos 
+| Método         | Fortaleza                                     | Limitación                         |
+| -------------- | --------------------------------------------- | ---------------------------------- |
+| **Split-half** | Simula replicación con datos independientes   | Solo 2 muestras (poca precisión)   |
+| **Bootstrap**  | Miles de muestras (alta precisión de SE e IC) | Muestras dependientes (mismo pool) |
+Usar ambos = evidencia más sólida que cualquiera sola.
+
+| Aspecto                   | ¿Qué buscar?           | Significado                            |
+| ------------------------- | ---------------------- | -------------------------------------- |
+| **Sesgo**                 | Cercano a 0 (< 0.05)   | La estimación original no está sesgada |
+| **IC 95% de CFI**         | Límite inferior > 0.90 | El modelo siempre ajusta bien          |
+| **IC 95% de RMSEA**       | Límite superior < 0.08 | El error de aproximación es bajo       |
+| **Estabilidad de cargas** | Todas con IC estrechos | Los ítems funcionan consistentemente   |
+Ejemplo:
+   Item     Original   MediaBoot  SE       IC 95%                    Sesgo   
+   ----------------------------------------------------------------------
+   i1       0.662      0.658      0.045    [0.571, 0.745]            -0.004
+   i2       0.462      0.465      0.062    [0.348, 0.589]            +0.003
+   ...
+   
+   CFI: IC 95% = [0.982, 1.000] ✅ Robusto (>0.90)
+   RMSEA: IC 95% = [0.000, 0.045] ✅ Robusto (<0.08)
+
+
 
 # validation_SEM
 Validar cuestionarios con ecuciones estructurales
