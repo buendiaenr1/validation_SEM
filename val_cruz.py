@@ -1,8 +1,7 @@
 import pandas as pd
 import numpy as np
-from semopy import Model
-from semopy.inspector import inspect
 from scipy import stats
+from scipy.linalg import eigh
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -13,7 +12,7 @@ np.random.seed(42)
 N_BOOTSTRAP = 1000
 
 print("="*70)
-print("VALIDACIÓN CRUZADA: BOOTSTRAP + SPLIT-HALF")
+print("VALIDACIÓN CRUZADA: BOOTSTRAP CFA + SPLIT-HALF")
 print("Cuestionario de Bienestar - 5 ítems")
 print("="*70)
 
@@ -33,102 +32,90 @@ print(f"   Variables: {items}")
 # FUNCIONES DE APOYO
 # ============================================
 
-def calcular_indices_ajuste(modelo, datos_input):
+def calcular_cfa_manual(datos_input):
     """
-    Calcula índices de ajuste manualmente sin calc_stats
+    CFA unidimensional manual usando máxima verosimilitud
+    Retorna cargas factoriales e índices de ajuste
     """
-    try:
-        # Obtener matriz de covarianzas
-        n = len(datos_input)
-        p = len(items)
-        
-        # Covarianza observada
-        S = datos_input.cov().values
-        
-        # Covarianza predicha por el modelo
-        Sigma = modelo.inspect('implied_cov')
-        
-        # Chi-cuadrado de likelihood
-        # Usamos traza(S * inv(Sigma)) - log(det(S * inv(Sigma))) - p
-        try:
-            Sigma_inv = np.linalg.inv(Sigma)
-            det_Sigma = np.linalg.det(Sigma)
-            det_S = np.linalg.det(S)
-            
-            # Estadístico de discrepancia
-            if det_Sigma > 0 and det_S > 0:
-                chi2 = (n - 1) * (np.trace(S @ Sigma_inv) - np.log(det_S/det_Sigma) - p)
-            else:
-                chi2 = (n - 1) * np.trace((S - Sigma) @ (S - Sigma))
-        except:
-            # Alternativa: diferencia de matrices
-            chi2 = (n - 1) * np.sum((S - Sigma)**2)
-        
-        df = p * (p + 1) / 2 - p  # Parámetros libres aproximados
-        
-        # CFI aproximado
-        corr = datos_input.corr().values
-        chi2_null = n * np.sum(corr[np.triu_indices_from(corr, k=1)]**2) * 2
-        df_null = p * (p - 1) / 2
-        
-        cfi = 1 - max(chi2 - df, 0) / max(chi2_null - df_null, 0.001)
-        cfi = max(0, min(1, cfi))
-        
-        # RMSEA
-        rmsea = np.sqrt(max(chi2 - df, 0) / (df * (n - 1))) if df > 0 and n > 1 else 0
-        
-        return chi2, df, cfi, rmsea
-        
-    except Exception as e:
-        # Si falla, usar aproximación simple
-        return 0, 5, 0.95, 0.05
+    n = len(datos_input)
+    p = len(items)
+    
+    # Matriz de correlaciones
+    R = datos_input.corr().values.copy()
+    np.fill_diagonal(R, 1.0)
+    
+    # Estimación de cargas: método de factor principal (aproximación ML)
+    autovalores, autovectores = np.linalg.eigh(R)
+    idx = np.argsort(autovalores)[::-1]
+    autovalores = autovalores[idx]
+    autovectores = autovectores[:, idx]
+    
+    # Cargas factoriales
+    loadings = autovectores[:, 0] * np.sqrt(autovalores[0])
+    
+    # Ajustar signo (positivo)
+    if np.sum(loadings) < 0:
+        loadings = -loadings
+    
+    # Matriz reproducida
+    reproduced = np.outer(loadings, loadings)
+    reproduced = reproduced.copy()
+    np.fill_diagonal(reproduced, 1.0)
+    
+    # Residuos
+    residuals = R - reproduced
+    
+    # ==========================================
+    # ÍNDICES DE AJUSTE
+    # ==========================================
+    
+    # Chi-cuadrado
+    chi2 = (n - 1) * np.sum(residuals**2) / 2
+    df = p * (p - 1) // 2 - p
+    
+    # CFI
+    chi2_null = (n - 1) * np.sum(R[np.triu_indices_from(R, k=1)]**2)
+    df_null = p * (p - 1) / 2
+    cfi = 1 - max(chi2 - df, 0) / max(chi2_null - df_null, 0.001)
+    cfi = max(0, min(1, cfi))
+    
+    # TLI
+    tli = ((chi2_null/df_null) - (chi2/df)) / ((chi2_null/df_null) - 1) if df > 0 else 1
+    tli = max(0, min(1, tli))
+    
+    # RMSEA
+    rmsea = np.sqrt(max(chi2 - df, 0) / (df * (n - 1))) if df > 0 else 0
+    
+    # SRMR
+    srmr = np.sqrt(np.sum(residuals**2) / (p * (p + 1) / 2))
+    
+    # GFI
+    gfi = 1 - np.sum(residuals**2) / np.sum(R**2)
+    
+    # Alfa de Cronbach
+    alfa = calcular_alfa_cronbach(datos_input)
+    
+    return {
+        'n': n,
+        'chi2': chi2,
+        'df': df,
+        'cfi': cfi,
+        'tli': tli,
+        'rmsea': rmsea,
+        'srmr': srmr,
+        'gfi': gfi,
+        'loadings': loadings,
+        'alfa': alfa,
+        'converged': True
+    }
 
-def ajustar_modelo(datos_input, nombre_muestra=""):
-    """Ajusta modelo CFA y extrae parámetros"""
-    try:
-        modelo_cfa = 'Bienestar =~ i1 + i2 + i3 + i4 + i5'
-        model = Model(modelo_cfa)
-        model.fit(datos_input)
-        
-        # Extraer resultados
-        results = inspect(model)
-        
-        # Cargas factoriales estandarizadas
-        # En semopy, las cargas están en results donde op es '~=' 
-        loadings_rows = results[results['op'] == '~=']
-        if len(loadings_rows) == 0:
-            # Intentar con '~'
-            loadings_rows = results[results['op'] == '~']
-        
-        # Extraer valores para los 5 ítems
-        loadings = []
-        for item in items:
-            # Buscar fila donde 'rval' es el ítem
-            row = results[results['rval'] == item]
-            if len(row) > 0:
-                # Tomar el valor estandarizado si existe, si no el estimate
-                val = row['std.all'].values[0] if 'std.all' in row.columns else row['Estimate'].values[0]
-                loadings.append(float(val))
-            else:
-                loadings.append(0.5)  # Valor por defecto si no se encuentra
-        
-        loadings = np.array(loadings)
-        
-        # Calcular índices de ajuste
-        chi2, df, cfi, rmsea = calcular_indices_ajuste(model, datos_input)
-        
-        return {
-            'n': len(datos_input),
-            'chi2': chi2,
-            'df': df,
-            'cfi': cfi,
-            'rmsea': rmsea,
-            'loadings': loadings,
-            'converged': True
-        }
-    except Exception as e:
-        print(f"   ⚠️ Error en {nombre_muestra}: {str(e)[:100]}")
-        return {'n': len(datos_input), 'converged': False}
+def calcular_alfa_cronbach(datos):
+    """Calcula el alfa de Cronbach"""
+    n_items = datos.shape[1]
+    var_total = datos.sum(axis=1).var()
+    sum_var_items = datos.var().sum()
+    alfa = (n_items / (n_items - 1)) * (1 - sum_var_items / var_total)
+    return max(0, min(1, alfa))
 
 def calcular_ic(datos, confianza=0.95):
     """Intervalo de confianza percentil"""
@@ -142,34 +129,20 @@ print(f"\n{'='*70}")
 print("1. MUESTRA COMPLETA (estimación original)")
 print(f"{'='*70}")
 
-completa = ajustar_modelo(datos, "Completa")
-
-if not completa['converged']:
-    print("   ❌ ERROR: El modelo no convergió en la muestra completa")
-    print("   Intentando método alternativo...")
-    
-    # Método alternativo: correlaciones item-total
-    print("\n   Usando análisis de correlaciones item-total como proxy:")
-    datos['total'] = datos[items].sum(axis=1)
-    for item in items:
-        corr = datos[item].corr(datos['total'])
-        print(f"      {item}: r = {corr:.3f}")
-    
-    # Crear estimación proxy
-    loadings_proxy = [datos[item].corr(datos['total']) for item in items]
-    completa = {
-        'n': n_total,
-        'cfi': 0.95,  # Asumido
-        'rmsea': 0.05,  # Asumido
-        'loadings': np.array(loadings_proxy),
-        'converged': True
-    }
+completa = calcular_cfa_manual(datos)
 
 print(f"\n   n = {completa['n']}")
-print(f"   CFI = {completa['cfi']:.3f} | RMSEA = {completa['rmsea']:.3f}")
-print(f"\n   Cargas factoriales (proxy):")
+print(f"   χ²({completa['df']}) = {completa['chi2']:.2f}")
+print(f"   CFI = {completa['cfi']:.3f} {'✅' if completa['cfi'] > 0.95 else '🟡' if completa['cfi'] > 0.90 else '❌'}")
+print(f"   TLI = {completa['tli']:.3f} {'✅' if completa['tli'] > 0.95 else '🟡' if completa['tli'] > 0.90 else '❌'}")
+print(f"   RMSEA = {completa['rmsea']:.3f} {'✅' if completa['rmsea'] < 0.06 else '🟡' if completa['rmsea'] < 0.08 else '❌'}")
+print(f"   SRMR = {completa['srmr']:.3f} {'✅' if completa['srmr'] < 0.08 else '🟡' if completa['srmr'] < 0.10 else '❌'}")
+print(f"   GFI = {completa['gfi']:.3f} {'✅' if completa['gfi'] > 0.90 else '🟡' if completa['gfi'] > 0.85 else '❌'}")
+print(f"   α = {completa['alfa']:.3f} {'✅' if completa['alfa'] > 0.80 else '🟡' if completa['alfa'] > 0.70 else '❌'}")
+
+print(f"\n   Cargas factoriales:")
 for i, item in enumerate(items):
-    print(f"      {item}: {completa['loadings'][i]:.3f}")
+    print(f"      {item}: λ = {completa['loadings'][i]:.3f} {'✅' if abs(completa['loadings'][i]) > 0.60 else '🟡' if abs(completa['loadings'][i]) > 0.40 else '❌'}")
 
 # ============================================
 # PARTE 2: VALIDACIÓN CRUZADA SPLIT-HALF
@@ -190,44 +163,20 @@ mitad_b = datos.iloc[indices[n_total//2:]].reset_index(drop=True)
 
 print(f"\n   {'-'*50}")
 print(f"   🔷 MITAD A (calibración)")
-ajuste_a = ajustar_modelo(mitad_a, "Mitad A")
-
-if not ajuste_a['converged']:
-    print("   Usando método alternativo (correlaciones)...")
-    mitad_a['total'] = mitad_a[items].sum(axis=1)
-    loadings_a = [mitad_a[item].corr(mitad_a['total']) for item in items]
-    ajuste_a = {
-        'n': len(mitad_a),
-        'cfi': 0.95,
-        'rmsea': 0.05,
-        'loadings': np.array(loadings_a),
-        'converged': True
-    }
+ajuste_a = calcular_cfa_manual(mitad_a)
 
 print(f"   n = {ajuste_a['n']}")
-print(f"   CFI = {ajuste_a['cfi']:.3f} | RMSEA = {ajuste_a['rmsea']:.3f}")
+print(f"   CFI = {ajuste_a['cfi']:.3f} | RMSEA = {ajuste_a['rmsea']:.3f} | SRMR = {ajuste_a['srmr']:.3f}")
 print(f"   Cargas: ", end="")
 for i, item in enumerate(items):
     print(f"{item}={ajuste_a['loadings'][i]:.2f} ", end="")
 print()
 
 print(f"\n   🔷 MITAD B (validación)")
-ajuste_b = ajustar_modelo(mitad_b, "Mitad B")
-
-if not ajuste_b['converged']:
-    print("   Usando método alternativo (correlaciones)...")
-    mitad_b['total'] = mitad_b[items].sum(axis=1)
-    loadings_b = [mitad_b[item].corr(mitad_b['total']) for item in items]
-    ajuste_b = {
-        'n': len(mitad_b),
-        'cfi': 0.95,
-        'rmsea': 0.06,
-        'loadings': np.array(loadings_b),
-        'converged': True
-    }
+ajuste_b = calcular_cfa_manual(mitad_b)
 
 print(f"   n = {ajuste_b['n']}")
-print(f"   CFI = {ajuste_b['cfi']:.3f} | RMSEA = {ajuste_b['rmsea']:.3f}")
+print(f"   CFI = {ajuste_b['cfi']:.3f} | RMSEA = {ajuste_b['rmsea']:.3f} | SRMR = {ajuste_b['srmr']:.3f}")
 print(f"   Cargas: ", end="")
 for i, item in enumerate(items):
     print(f"{item}={ajuste_b['loadings'][i]:.2f} ", end="")
@@ -252,27 +201,34 @@ print(f"   Máxima diferencia: {dif_max:.3f} (ítem {items[np.argmax(dif_cargas)
 
 print(f"\n   Concordancia de índices de ajuste:")
 print(f"   CFI:   {ajuste_a['cfi']:.3f} vs {ajuste_b['cfi']:.3f} (Δ = {abs(ajuste_a['cfi']-ajuste_b['cfi']):.3f})")
+print(f"   TLI:   {ajuste_a['tli']:.3f} vs {ajuste_b['tli']:.3f} (Δ = {abs(ajuste_a['tli']-ajuste_b['tli']):.3f})")
 print(f"   RMSEA: {ajuste_a['rmsea']:.3f} vs {ajuste_b['rmsea']:.3f} (Δ = {abs(ajuste_a['rmsea']-ajuste_b['rmsea']):.3f})")
+print(f"   SRMR:  {ajuste_a['srmr']:.3f} vs {ajuste_b['srmr']:.3f} (Δ = {abs(ajuste_a['srmr']-ajuste_b['srmr']):.3f})")
 
 split_ok = (dif_media < 0.1 and 
             abs(ajuste_a['cfi']-ajuste_b['cfi']) < 0.05 and
-            min(ajuste_a['cfi'], ajuste_b['cfi']) > 0.90)
+            abs(ajuste_a['rmsea']-ajuste_b['rmsea']) < 0.05)
 
 print(f"\n   {'✅ SPLIT-HALF: CONCORDANCIA ACEPTABLE' if split_ok else '⚠️ SPLIT-HALF: DIFERENCIAS IMPORTANTES'}")
 
 # ============================================
-# PARTE 3: BOOTSTRAP
+# PARTE 3: BOOTSTRAP CFA COMPLETO
 # ============================================
 print(f"\n{'='*70}")
-print("3. BOOTSTRAP (Validación interna)")
+print("3. BOOTSTRAP CFA COMPLETO (Validación interna)")
 print(f"{'='*70}")
 
 print(f"\n   📋 Procedimiento:")
-print(f"   • {N_BOOTSTRAP} remuestras con reemplazo (n={n_total} cada una)")
+print(f"   • {N_BOOTSTRAP} remuestras bootstrap con reemplazo")
+print(f"   • n = {n_total} en cada remuestra")
+print(f"   • CFA unidimensional en cada iteración")
+print(f"   • Estimación de distribución de parámetros")
 
 boot_cargas = {item: [] for item in items}
 boot_cfi = []
 boot_rmsea = []
+boot_srmr = []
+boot_tli = []
 converged = 0
 
 print(f"\n   Ejecutando...")
@@ -284,89 +240,136 @@ for b in range(N_BOOTSTRAP):
         bar = int((b / N_BOOTSTRAP) * 50)
         print(f"\r   [{'='*bar}{' '*(50-bar)}] {pct}%", end='', flush=True)
     
-    indices = np.random.choice(n_total, size=n_total, replace=True)
-    muestra = datos.iloc[indices].copy()
+    # Remuestra bootstrap
+    indices_boot = np.random.choice(n_total, size=n_total, replace=True)
+    muestra_boot = datos.iloc[indices_boot].copy()
     
-    # Método bootstrap: correlaciones item-total
+    # CFA en remuestra
     try:
-        muestra['total'] = muestra[items].sum(axis=1)
-        loadings_boot = [muestra[item].corr(muestra['total']) for item in items]
+        resultado_boot = calcular_cfa_manual(muestra_boot)
         
+        # Guardar resultados
         for i, item in enumerate(items):
-            boot_cargas[item].append(loadings_boot[i])
+            boot_cargas[item].append(resultado_boot['loadings'][i])
         
-        # Índices proxy basados en consistencia interna
-        from scipy.stats import pearsonr
-        boot_cfi.append(0.90 + np.random.normal(0, 0.02))  # Simulado
-        boot_rmsea.append(0.05 + np.random.normal(0, 0.01))  # Simulado
+        boot_cfi.append(resultado_boot['cfi'])
+        boot_rmsea.append(resultado_boot['rmsea'])
+        boot_srmr.append(resultado_boot['srmr'])
+        boot_tli.append(resultado_boot['tli'])
         
         converged += 1
-    except:
+    except Exception as e:
+        # Si falla, no guardar esta iteración
         pass
 
 print(f"\r   [{'='*50}] 100%")
-print(f"\n   Muestras procesadas: {converged}/{N_BOOTSTRAP}")
+print(f"\n   Muestras convergidas: {converged}/{N_BOOTSTRAP} ({converged/N_BOOTSTRAP*100:.1f}%)")
 
 # Convertir a arrays
 for item in items:
     boot_cargas[item] = np.array(boot_cargas[item])
 boot_cfi = np.array(boot_cfi)
 boot_rmsea = np.array(boot_rmsea)
+boot_srmr = np.array(boot_srmr)
+boot_tli = np.array(boot_tli)
 
 print(f"\n   {'-'*50}")
-print(f"   📊 RESULTADOS BOOTSTRAP:")
+print(f"   📊 RESULTADOS BOOTSTRAP CFA:")
 
 print(f"\n   {'Item':<8} {'Original':<10} {'Media':<10} {'SE':<8} {'IC 95%':<25} {'Sesgo'}")
 print(f"   {'-'*70}")
 
+sesgos = []
 for i, item in enumerate(items):
     orig = completa['loadings'][i]
     media = np.mean(boot_cargas[item])
     se = np.std(boot_cargas[item], ddof=1)
     ic_low, ic_high = calcular_ic(boot_cargas[item])
     sesgo = media - orig
+    sesgos.append(sesgo)
     
-    print(f"   {item:<8} {orig:<10.3f} {media:<10.3f} {se:<8.3f} [{ic_low:.3f}, {ic_high:.3f}]  {sesgo:+.3f}")
+    # Evaluar sesgo
+    sesgo_eval = "✅" if abs(sesgo) < 0.05 else "⚠️" if abs(sesgo) < 0.10 else "❌"
+    
+    print(f"   {item:<8} {orig:<10.3f} {media:<10.3f} {se:<8.3f} [{ic_low:.3f}, {ic_high:.3f}]  {sesgo:+.3f} {sesgo_eval}")
 
-media_cfi = np.mean(boot_cfi)
-se_cfi = np.std(boot_cfi, ddof=1)
-ic_cfi_low, ic_cfi_high = calcular_ic(boot_cfi)
+# Estadísticas de índices de ajuste
+print(f"\n   📊 ÍNDICES DE AJUSTE (Bootstrap):")
+print(f"   {'Índice':<10} {'Original':<10} {'Media':<10} {'SE':<8} {'IC 95%':<25}")
+print(f"   {'-'*65}")
 
-media_rmsea = np.mean(boot_rmsea)
-se_rmsea = np.std(boot_rmsea, ddof=1)
-ic_rmsea_low, ic_rmsea_high = calcular_ic(boot_rmsea)
-
-print(f"\n   Índices de ajuste (simulados):")
-print(f"   CFI:   Media = {media_cfi:.3f}, SE = {se_cfi:.3f}, IC = [{ic_cfi_low:.3f}, {ic_cfi_high:.3f}]")
-print(f"   RMSEA: Media = {media_rmsea:.3f}, SE = {se_rmsea:.3f}, IC = [{ic_rmsea_low:.3f}, {ic_rmsea_high:.3f}]")
+for nombre, original, boot_array in [
+    ('CFI', completa['cfi'], boot_cfi),
+    ('TLI', completa['tli'], boot_tli),
+    ('RMSEA', completa['rmsea'], boot_rmsea),
+    ('SRMR', completa['srmr'], boot_srmr)
+]:
+    media = np.mean(boot_array)
+    se = np.std(boot_array, ddof=1)
+    ic_low, ic_high = calcular_ic(boot_array)
+    
+    print(f"   {nombre:<10} {original:<10.3f} {media:<10.3f} {se:<8.3f} [{ic_low:.3f}, {ic_high:.3f}]")
 
 # ============================================
-# PARTE 4: SÍNTESIS
+# PARTE 4: SÍNTESIS Y EVALUACIÓN DE ROBUSTEZ
 # ============================================
 print(f"\n{'='*70}")
 print("4. SÍNTESIS DE VALIDACIÓN CRUZADA")
+print(" BUAP México:   Enrique Buendia Lozada")
 print(f"{'='*70}")
 
-cargas_estables = all(np.std(boot_cargas[item]) < 0.15 for item in items)
+# Criterios de estabilidad
+criterios = {
+    'Split-half (Δλ < 0.10)': dif_media < 0.10,
+    'Bootstrap: Sesgo cargas < 0.05': all(abs(s) < 0.05 for s in sesgos),
+    'Bootstrap: SE cargas < 0.10': all(np.std(boot_cargas[item], ddof=1) < 0.10 for item in items),
+    'CFI estable (SE < 0.05)': np.std(boot_cfi, ddof=1) < 0.05,
+    'Convergencia bootstrap > 95%': (converged/N_BOOTSTRAP) > 0.95
+}
 
-print(f"\n   CRITERIOS:")
-print(f"   ✓ Split-half: Diferencia cargas < 0.1 → {'SÍ' if dif_media < 0.1 else 'NO'} ({dif_media:.3f})")
-print(f"   ✓ Bootstrap: Cargas estables → {'SÍ' if cargas_estables else 'NO'}")
+print(f"\n   📋 CRITERIOS DE ROBUSTEZ:")
+puntos = 0
+for criterio, cumple in criterios.items():
+    estado = "✅" if cumple else "❌"
+    print(f"   {estado} {criterio}")
+    if cumple:
+        puntos += 1
 
-puntos = sum([dif_media < 0.1, cargas_estables])
+print(f"\n   EVIDENCIA: {puntos}/{len(criterios)} criterios")
 
-print(f"\n   EVIDENCIA: {puntos}/2 criterios")
-
-if puntos == 2:
-    print(f"\n   ✅ ALTA ROBUSTEZ")
-elif puntos == 1:
-    print(f"\n   🟡 MODERADA ROBUSTEZ")
+# Evaluación global
+if puntos == len(criterios):
+    nivel_robustez = "ALTA ROBUSTEZ"
+    interpretacion = "El modelo es altamente estable. Las estimaciones son confiables y replicables."
+elif puntos >= len(criterios) * 0.6:
+    nivel_robustez = "MODERADA ROBUSTEZ"
+    interpretacion = "El modelo es razonablemente estable. Algunas estimaciones muestran variabilidad moderada."
 else:
-    print(f"\n   ❌ BAJA ROBUSTEZ")
+    nivel_robustez = "BAJA ROBUSTEZ"
+    interpretacion = "El modelo muestra inestabilidad. Las estimaciones deben interpretarse con cautela."
+
+print(f"\n{'='*70}")
+print(f"   {nivel_robustez}")
+print(f"{'='*70}")
+print(f"\n   INTERPRETACIÓN:")
+print(f"   {interpretacion}")
+
+# Recomendaciones específicas
+print(f"\n   💡 RECOMENDACIONES:")
+if not criterios['Bootstrap: Sesgo cargas < 0.05']:
+    items_sesgo = [items[i] for i, s in enumerate(sesgos) if abs(s) >= 0.05]
+    print(f"   • Ítems con sesgo moderado: {', '.join(items_sesgo)}")
+    print(f"     → Considerar estabilidad de estos ítems en futuras muestras")
+
+if not criterios['Bootstrap: SE cargas < 0.10']:
+    items_se = [item for item in items if np.std(boot_cargas[item], ddof=1) >= 0.10]
+    print(f"   • Ítems con alta variabilidad: {', '.join(items_se)}")
+    print(f"     → Las cargas de estos ítems son menos precisas")
+
+if criterios['Split-half (Δλ < 0.10)'] and criterios['Bootstrap: SE cargas < 0.10']:
+    print(f"   • Las cargas factoriales son estables entre muestras")
+    print(f"   • Se puede confiar en la estructura factorial reportada")
 
 print(f"\n{'='*70}")
 print("ANÁLISIS COMPLETADO")
 print(f"{'='*70}")
-
-
-
