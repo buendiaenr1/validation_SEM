@@ -1,3 +1,10 @@
+## validacion completa
+## ---------------------------------------------------------------------------------------------------------
+# usar analisis_psicometrico_integrado.py y estructura similar a datos_invar.csv   de manera conjunta
+## ---------------------------------------------------------------------------------------------------------
+
+
+
 ## Instalar 7ZIP
 ## descargar los 30 archivos validac1.exe.nnn
 ## Usar la consola de 7zip, seleccionar validac1.exe.001 y seleccionar desempacar, automaticamente 7zip desempacará y juntara el archivo completo
@@ -149,7 +156,7 @@ Tu resultado: 0.04 → ✅ Diferencias mínimas entre predicción y realidad
 Tu modelo tiene un ajuste EXCELENTE. Todos los índices indican que tu modelo teórico representa fielmente los datos observados. Es válido desde el punto de vista estadístico.
 💡 Analogía simple
 Imagina que tu modelo es un traje hecho a medida:
-χ²: ¿El traje se ve forzado? → No, se ve natural ✅
+χ²: ¿El traje se ve forzado? → No, se ve natural ✅     no se debe al azar , esfericidad.
 CFI: ¿Qué tan bien cubre el cuerpo? → Cubre el 97% ✅
 TLI: ¿Es buen ajuste o tiene demasiados botones/costuras innecesarias? → Ajuste genuino ✅
 RMSEA: ¿Cuántos "pliegues" o arrugas tiene? → Casi ninguno ✅
