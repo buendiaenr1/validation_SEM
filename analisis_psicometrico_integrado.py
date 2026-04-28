@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 ================================================================================
@@ -272,7 +272,7 @@ class SistemaPsicometrico:
                 res['bartlett_p'] = p_val
                 print(f"\n--- Pruebas Preliminares ---")
                 print(f"KMO: {kmo_model:.3f}")
-                print(f"Bartlett: p={p_val:.5f}")
+                print(f"Bartlett: p={p_val:.5f} (esferificidad)\n")
             except Exception as e:
                 self._log(f"Error en pruebas preliminares: {e}")
         self.resultados['preliminares'] = res
@@ -298,7 +298,7 @@ class SistemaPsicometrico:
         if SEMOPY_DISPONIBLE:
             self.estimar_cfa_semopy(estructura)
             if self.modelo_semopy:
-                self.calcular_ajuste_semopy(self.modelo_semopy)
+                self.calcular_ajuste_semopy(self.modelo_semopy)  # CORRECCIÓN
                 self.calcular_confiabilidad(estructura_factores=estructura)
             
             # --- AGREGADO: SEM ESTRUCTURAL ---
@@ -334,13 +334,22 @@ class SistemaPsicometrico:
     def calcular_ajuste_semopy(self, model):
         try:
             stats = semopy.calc_stats(model)
-            print("\n--- Índices de Ajuste (Semopy) ---")
-            for k in ['CFI', 'TLI', 'RMSEA', 'SRMR']:
-                if k in stats:
-                    print(f"{k}: {stats[k]:.3f}")
-            self.resultados['ajuste'] = stats
+
+            self._log("\n\n--- Índices de Ajuste (Semopy) ---")
+
+            # convertir a diccionario plano
+            valores = stats.to_dict(orient="records")[0]
+            for k, v in valores.items():
+                self._log(f"{k:20}: {v:.6f}")
+
+            self.resultados['ajuste'] = valores
+
         except Exception as e:
             self._log(f"Error cálculo ajuste: {e}")
+
+
+
+
 
     def calcular_confiabilidad(self, estructura_factores):
         datos = self.datos_limpios[self.items_cols]
@@ -423,7 +432,11 @@ class SistemaPsicometrico:
             print(insp)
             
             # Guardamos los resultados del SEM estructural
-            self.resultados['sem_estructural'] = {'inspeccion': insp, 'ajuste': semopy.calc_stats(model)}
+            # self.resultados['sem_estructural'] = {'\n\ninspeccion': insp, 'ajuste': semopy.calc_stats(model)}
+            self.resultados['sem_estructural'] = {
+                'inspeccion': insp,                # guardamos el DataFrame original
+                'ajuste': semopy.calc_stats(model) # también es DataFrame
+            }
 
             # 4. Validación Cruzada con Bootstrap
             print("\n--- Resultados del Bootstrap (n=1000) ---")
@@ -437,7 +450,7 @@ class SistemaPsicometrico:
                 print(params_df[['lval', 'op', 'rval', 'Estimate', 'SE', 'p-value']].head(10))
 
             # Información sobre el ajuste del modelo estructural
-            print("\n--- Índices de Bondad de Ajuste (SEM Estructural) ---")
+            print("\n\n--- Índices de Bondad de Ajuste (SEM Estructural) ---")
             stats = semopy.calc_stats(model)
             for k, v in stats.items():
                 if isinstance(v, (float, int)):
@@ -580,14 +593,16 @@ class SistemaPsicometrico:
     def generar_visualizaciones(self, tipo='final'):
         if not VISUALIZACION_DISPONIBLE: return
         
+        # Matriz de correlaciones
         if tipo == 'diagnostico' or tipo == 'final':
             try:
                 plt.figure(figsize=(10,8))
                 sns.heatmap(self.datos_limpios.corr(), annot=True, cmap='coolwarm')
-                plt.title('Matriz de Correlaciones')
+                plt.title('Figura 1. Matriz de Correlaciones')
                 self._guardar_figura_segura('correlaciones')
             except: pass
 
+        # Scree plot
         if tipo == 'cfa' or tipo == 'final':
             try:
                 R = self.datos_limpios.corr().values
@@ -595,15 +610,74 @@ class SistemaPsicometrico:
                 plt.figure(figsize=(8,5))
                 plt.plot(range(1, len(eig)+1), sorted(eig)[::-1], 'bo-')
                 plt.axhline(y=1, color='r', linestyle='--')
-                plt.title('Scree Plot')
+                plt.title('Figura 2. Scree Plot de autovalores')
                 self._guardar_figura_segura('scree_plot')
+            except: pass
+
+        # Índices de ajuste del modelo SEM
+        if 'ajuste' in self.resultados:
+            try:
+                df = pd.DataFrame.from_dict(self.resultados['ajuste'], orient='index', columns=['Valor'])
+                plt.figure(figsize=(8,5))
+                df.plot(kind='bar', legend=False)
+                plt.title('Figura 3. Índices de Ajuste del Modelo SEM')
+                plt.ylabel('Valor')
+                self._guardar_figura_segura('indices_ajuste')
+            except: pass
+
+        # Confiabilidad interna (Alfa y Omega)
+        if 'confiabilidad' in self.resultados:
+            try:
+                conf = self.resultados['confiabilidad']
+                df = pd.DataFrame(list(conf.items()), columns=['Coeficiente','Valor'])
+                plt.figure(figsize=(6,4))
+                sns.barplot(x='Coeficiente', y='Valor', data=df)
+                plt.title('Figura 4. Confiabilidad Interna (α y ω)')
+                plt.ylim(0,1)
+                self._guardar_figura_segura('confiabilidad')
+            except: pass
+
+        # Invarianza de medida
+        if 'invarianza' in self.resultados:
+            try:
+                df = pd.DataFrame(self.resultados['invarianza'])
+                plt.figure(figsize=(8,5))
+                sns.heatmap(df, annot=True, cmap='viridis')
+                plt.title('Figura 5. Cargas factoriales por grupo (Invarianza)')
+                self._guardar_figura_segura('invarianza')
+            except: pass
+
+        # Validación cruzada (Bootstrap)
+        if 'validacion_cruzada' in self.resultados:
+            try:
+                media = self.resultados['validacion_cruzada']['media']
+                se = self.resultados['validacion_cruzada']['se']
+                items = self.items_cols
+                df = pd.DataFrame({'Item': items, 'Media': media, 'SE': se})
+                plt.figure(figsize=(8,5))
+                sns.barplot(x='Item', y='Media', data=df, yerr=se)
+                plt.title('Figura 6. Resultados Bootstrap (Media y Error Estándar)')
+                self._guardar_figura_segura('bootstrap')
             except: pass
 
     def generar_reporte_texto(self):
         contenido = "REPORTE PSICOMÉTRICO\n===================\n\n"
         for k, v in self.resultados.items():
-            contenido += f"BLOQUE: {k}\n{str(v)}\n\n" + "-"*50 + "\n"
+            contenido += f"BLOQUE: {k}\n"
+            if isinstance(v, dict):
+                for subk, subv in v.items():
+                    contenido += f"{subk}:\n"
+                    if isinstance(subv, pd.DataFrame):
+                        contenido += subv.to_string(index=False) + "\n"
+                    else:
+                        contenido += str(subv) + "\n"
+            elif isinstance(v, pd.DataFrame):
+                contenido += v.to_string(index=False) + "\n"
+            else:
+                contenido += str(v) + "\n"
+            contenido += "-"*50 + "\n"
         self._guardar_texto_seguro('reporte_completo', contenido)
+
 
     def exportar_resultados_csv(self):
         if 'ajuste' in self.resultados:
