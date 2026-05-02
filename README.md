@@ -45,6 +45,9 @@ Ejemplo:
    RMSEA: IC 95% = [0.000, 0.045] ✅ Robusto (<0.08)
 
 
+<img width="1034" height="525" alt="image" src="https://github.com/user-attachments/assets/51967726-cf76-4834-ad5e-2bf85b77b980" />
+<img width="952" height="511" alt="image" src="https://github.com/user-attachments/assets/66c92eac-844f-4907-91a9-eb204656e0e8" />
+
 
 # validation_SEM
 Validar cuestionarios con ecuciones estructurales
