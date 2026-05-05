@@ -1,6 +1,6 @@
 ## validacion completa
 ## ---------------------------------------------------------------------------------------------------------
-# usar analisis_psicometrico_integrado.py y estructura similar a datos_invar.csv   de manera conjunta
+# usar api.py y estructura similar a datos.csv   de manera conjunta   (grupos; i1; i2; i3; .... )
 ### para validar cuestionarios estilo liker
 ## ---------------------------------------------------------------------------------------------------------
 
