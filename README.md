@@ -1,4 +1,7 @@
 ## validacion completa
+##
+## Mejor opción:    validar.r
+##
 ## ---------------------------------------------------------------------------------------------------------
 # usar api.py y estructura similar a datos.csv   de manera conjunta   (grupos; i1; i2; i3; .... )
 ### para validar cuestionarios estilo liker
