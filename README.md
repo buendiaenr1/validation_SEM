@@ -1,6 +1,6 @@
 ## validacion completa
 ##
-## Mejor opción:    validar.r
+## Mejor opción:    validar.r     para R Ver 4.4.2
 ##
 ## ---------------------------------------------------------------------------------------------------------
 # usar api.py y estructura similar a datos.csv   de manera conjunta   (grupos; i1; i2; i3; .... )
