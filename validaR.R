@@ -103,14 +103,23 @@ clasificar_kmo <- function(v) {
       labels=c("INACEPTABLE","MEDIOCRE","ACEPTABLE","BUENO","MERITORIO","MARAVILLOSO"))
 }
 
+#####
+#clasificar_ajuste_cfi <- function(v) {
+#  if (is.na(v)) return("N/A")
+#  cut(v, breaks=c(-Inf,0.90,0.95,Inf), labels=c("INACEPTABLE","ACEPTABLE","EXCELENTE"))
+#}
+
+#### Corregido
 clasificar_ajuste_cfi <- function(v) {
   if (is.na(v)) return("N/A")
-  cut(v, breaks=c(-Inf,0.90,0.95,Inf), labels=c("INACEPTABLE","ACEPTABLE","EXCELENTE"))
+  as.character(cut(v, breaks=c(-Inf,0.90,0.95,Inf), labels=c("INACEPTABLE","ACEPTABLE","EXCELENTE")))
 }
 
+# Arreglado
 clasificar_ajuste_rmsea <- function(v) {
   if (is.na(v)) return("N/A")
-  cut(v, breaks=c(-Inf,0.08,0.06,0.05,Inf), labels=c("MALO","ACEPTABLE","BUENO","EXCELENTE"))
+  cut(v, breaks=c(-Inf,0.05,0.06,0.08,Inf), 
+      labels=c("EXCELENTE","BUENO","ACEPTABLE","MALO"))
 }
 
 omega_mcdonald_calc <- function(df) {
@@ -354,6 +363,16 @@ if (outliers_result$n_outliers>0) {
          col=c('red','black'), lty=c(2,NA), pch=c(NA,16))
   dev.off()
   cat("[GRAFICA] Guardada: 02_outliers_mahalanobis.png\n")
+
+  # ELIMINAR outliers detectados
+  if (outliers_result$n_outliers > 0) {
+    df_items_clean <- df_items_clean[-outliers_result$outliers, ]
+    if (tiene_grupo) grupo_clean <- grupo_clean[-outliers_result$outliers]
+    n_participantes <- nrow(df_items_clean)
+    mat_datos <- as.matrix(df_items_clean)
+    cat(sprintf("  [ACCIÓN] Outliers eliminados. Muestra final: N = %d\n", n_participantes))
+  }
+  # modificado
 } else {
   cat("  [OK] Sin outliers multivariados\n")
 }
@@ -807,9 +826,24 @@ if (!is.null(loadings_efa) && is.matrix(loadings_efa)) {
     }
     if (length(modelo_lines) > 0) {
       modelo_spec <- paste(modelo_lines, collapse = "\n")
-      estimator <- if(!normalidad_multivariada_ok) "MLR" else "ML"
+      
+      # actualizacion de automatizacion completa
+      # Decisión automática del estimador para AFC
+      if ((ESCALA_MAX - ESCALA_MIN + 1) <= 4) {
+        estimator <- "WLSMV"
+        cat("  [DECISIÓN] Escala ordinal ≤4 puntos -> Usando WLSMV\n")
+      } else if (!normalidad_multivariada_ok) {
+        estimator <- "MLR"
+        cat("  [DECISIÓN] Normalidad violada -> Usando MLR\n")
+      } else {
+        estimator <- "ML"
+        cat("  [DECISIÓN] Normalidad aceptable -> Usando ML\n")
+      }
+      # fin de actualizacion
+      
       cat(sprintf("  Estimador: %s\n", estimator))
       fit_cfa <- tryCatch(lavaan::cfa(modelo_spec, data = df_items_clean, std.lv = TRUE, estimator = estimator), error = function(e) NULL)
+      
       if (!is.null(fit_cfa)) {
         summary(fit_cfa, fit.measures = TRUE, standardized = TRUE, rsquare = TRUE)
         indices_fit <- tryCatch(lavaan::fitMeasures(fit_cfa), error = function(e) NULL)
@@ -1067,7 +1101,14 @@ siendo %s para su aplicación en contextos de investigación.
   ifelse(!is.null(resultados_globales$normalidad_multivariada) && !resultados_globales$normalidad_multivariada, "violación del supuesto de normalidad multivariada", "cumplimiento de supuestos estadísticos"),
   tolower(ifelse(!is.na(cfi_val), clasificar_ajuste_cfi(cfi_val), "no evaluado")),
   ifelse(!is.na(cfi_val) && !is.na(rmsea_val) && !is.na(srmr_val), sprintf(" (CFI = %.3f; RMSEA = %.3f; SRMR = %.3f)", cfi_val, rmsea_val, srmr_val), ""),
-  ifelse(!is.null(resultados_globales$validez_convergente) && nrow(resultados_globales$validez_convergente) > 0, "La validez convergente fue adecuada (AVE > .50 en todos los factores)", ""),
+  
+ # ifelse(!is.null(resultados_globales$validez_convergente) && nrow(resultados_globales$validez_convergente) > 0, "La validez convergente fue adecuada (AVE > .50 en todos los factores)", ""),
+  ifelse(!is.null(resultados_globales$validez_convergente) && nrow(resultados_globales$validez_convergente) > 0, 
+       ifelse(all(resultados_globales$validez_convergente$AVE > 0.50), 
+              "La validez convergente fue adecuada (AVE > .50 en todos los factores)", 
+              "La validez convergente fue parcial (AVE < .50 en al menos un factor), aunque la fiabilidad compuesta (CR) fue aceptable"), 
+       ""),
+
   ifelse(!is.null(resultados_globales$validez_discriminante) && !is.null(resultados_globales$validez_discriminante$fornell_larcker) && resultados_globales$validez_discriminante$fornell_larcker, ". La validez discriminante se estableció mediante criterios Fornell-Larcker y HTMT", ""),
   tolower(ifelse(!is.na(cfi_val) && cfi_val > 0.90, "sólidas", "aceptables")),
   ifelse(!is.na(cfi_val) && cfi_val > 0.95 && !is.na(rmsea_val) && rmsea_val < 0.06, "altamente recomendado", "adecuado")
