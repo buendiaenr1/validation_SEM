@@ -108,9 +108,14 @@ clasificar_ajuste_cfi <- function(v) {
   cut(v, breaks=c(-Inf,0.90,0.95,Inf), labels=c("INACEPTABLE","ACEPTABLE","EXCELENTE"))
 }
 
+#clasificar_ajuste_rmsea <- function(v) {
+#  if (is.na(v)) return("N/A")
+#  cut(v, breaks=c(-Inf,0.08,0.06,0.05,Inf), labels=c("MALO","ACEPTABLE","BUENO","EXCELENTE"))
+#}
 clasificar_ajuste_rmsea <- function(v) {
   if (is.na(v)) return("N/A")
-  cut(v, breaks=c(-Inf,0.08,0.06,0.05,Inf), labels=c("MALO","ACEPTABLE","BUENO","EXCELENTE"))
+  cut(v, breaks = c(-Inf, 0.05, 0.06, 0.08, Inf),
+      labels = c("EXCELENTE", "BUENO", "ACEPTABLE", "MALO"))
 }
 
 omega_mcdonald_calc <- function(df) {
