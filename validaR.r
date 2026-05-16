@@ -72,6 +72,9 @@ cat("\n[OK] Todos los paquetes cargados correctamente.\n")
 # 1. CONFIGURACION GLOBAL
 # =========================================================================
 
+# Variables sociodemográficas para análisis de invarianza (pueden ser una o varias)
+VARS_GRUPO <- c("sexo")        # Solo sexo
+# VARS_GRUPO <- c("sexo", "edad_grupo", "educacion")   # Múltiples
 ARCHIVO_DATOS <- "datos5.csv"
 COLUMNA_GRUPO <- NULL  # Cambiar si tienes grupos: ej. "grupo", "sexo"
 ESCALA_MIN <- 1; ESCALA_MAX <- 5
@@ -1122,32 +1125,258 @@ tryCatch({
 guardar_tabla(round(mat_corr, 4), "08_matriz_correlaciones")
 
 # =========================================================================
-# 14. ANÁLISIS POR GRUPOS (SI APLICA)
+# 14. ANÁLISIS DE INVARIANZA DE MEDICIÓN MULTIGRUPO CON LAVAAN
+# =========================================================================
+# Permite usar UNA o VARIAS variables sociodemográficas (sexo, edad, educación, etc.)
+# Requiere: variable global VARS_GRUPO (vector de nombres de columnas)
+# Si no existe, intenta usar COLUMNA_GRUPO (compatibilidad hacia atrás)
 # =========================================================================
 
-if (tiene_grupo && !is.null(grupo_clean) && !is.null(fa_efa)) {
-  cat("\n\n", paste(rep("#",80),collapse=""), "\n")
-  cat("#  12. INVARIANZA MULTIGRUPO\n")
-  cat(paste(rep("#",80),collapse=""), "\n")
-  scores_fa <- tryCatch(psych::factor.scores(mat_datos, fa_efa)$scores, error = function(e) NULL)
-  if (!is.null(scores_fa) && is.matrix(scores_fa)) {
-    df_scores <- as.data.frame(scores_fa); df_scores$grupo <- grupo_clean
-    n_grupos <- length(unique(grupo_clean))
-    if (n_grupos == 2) {
-      cat("\n  Comparación de grupos (prueba t):\n")
-      tabla_grupos <- data.frame(stringsAsFactors = FALSE)
-      for (f in 1:ncol(scores_fa)) {
-        fname <- colnames(scores_fa)[f]
-        t_res <- tryCatch(t.test(df_scores[, f] ~ grupo, data=df_scores), error=function(e) NULL)
-        if (!is.null(t_res)) {
-          d <- tryCatch(abs(t_res$estimate[1] - t_res$estimate[2]) / sqrt(t_res$stderr^2 + t_res$stderr^2), error=function(e) NA)
-          cat(sprintf("    %s: t(%d)=%.3f, p=%.4f, d=%.3f\n", fname, t_res$parameter, t_res$statistic, t_res$p.value, d))
-          tabla_grupos <- rbind(tabla_grupos, data.frame(Factor=fname, t=round(t_res$statistic,3), gl=t_res$parameter, p=t_res$p.value, Cohen_d=round(d,3), stringsAsFactors=FALSE))
+# --- Definir las variables de grupo a analizar ---
+if (!exists("VARS_GRUPO") || is.null(VARS_GRUPO)) {
+  if (tiene_grupo && !is.null(COLUMNA_GRUPO)) {
+    VARS_GRUPO <- COLUMNA_GRUPO  # compatibilidad con versión anterior
+  } else {
+    VARS_GRUPO <- NULL
+  }
+}
+
+# Verificar que hay al menos una variable de grupo definida y que existe en los datos
+if (!is.null(VARS_GRUPO) && length(VARS_GRUPO) > 0 && exists("df_completo")) {
+  
+  # Asegurar que las variables de grupo estén en df_completo y sean factores
+  vars_grupo_existentes <- VARS_GRUPO[VARS_GRUPO %in% names(df_completo)]
+  
+  if (length(vars_grupo_existentes) == 0) {
+    cat("\n  [AVISO] Ninguna variable de grupo especificada se encontró en los datos.\n")
+  } else {
+    
+    cat("\n\n", paste(rep("#",80),collapse=""), "\n")
+    cat("#  ANÁLISIS DE INVARIANZA DE MEDICIÓN MULTIGRUPO\n")
+    cat(paste(rep("#",80),collapse=""), "\n")
+    
+    # --------------------------------------------------------------
+    # 1. Construir el modelo factorial a partir de la solución EFA
+    # --------------------------------------------------------------
+    if (!is.null(loadings_efa) && is.matrix(loadings_efa)) {
+      
+      loadings_mat <- as.matrix(loadings_efa)
+      n_fact <- ncol(loadings_mat)
+      nombres_factores <- colnames(loadings_mat)
+      if (is.null(nombres_factores)) nombres_factores <- paste0("F", 1:n_fact)
+      
+      # Asignar cada ítem al factor con mayor carga absoluta
+      asignacion <- apply(loadings_mat, 1, function(row) {
+        idx <- which.max(abs(row))
+        if (length(idx) == 0) NA else nombres_factores[idx]
+      })
+      
+      # Construir líneas del modelo lavaan
+      modelo_lines <- c()
+      for (f in nombres_factores) {
+        items_f <- names(asignacion)[!is.na(asignacion) & asignacion == f]
+        if (length(items_f) >= 3) {  # mínimo 3 ítems por factor para identificación
+          modelo_lines <- c(modelo_lines, paste0("  ", f, " =~ ", paste(items_f, collapse = " + ")))
+        } else if (length(items_f) == 2) {
+          # Para 2 ítems, fijar varianza del factor a 1 y permitir correlación residual?
+          # Opción simple: usar igual (lavaan lo manejará, pero puede dar advertencia)
+          modelo_lines <- c(modelo_lines, paste0("  ", f, " =~ ", paste(items_f, collapse = " + ")))
+          cat(sprintf("  [AVISO] Factor %s tiene solo %d ítems. Invarianza puede ser inestable.\n", f, length(items_f)))
+        } else if (length(items_f) == 1) {
+          cat(sprintf("  [AVISO] Factor %s tiene 1 solo ítem. Se omite del modelo multigrupo.\n", f))
         }
       }
-      if (nrow(tabla_grupos) > 0) guardar_tabla(tabla_grupos, "09_comparacion_grupos")
-    } else if (n_grupos > 2) { cat(sprintf("\n  Se detectaron %d grupos (considerar ANOVA)\n", n_grupos)) }
+      
+      if (length(modelo_lines) == 0) {
+        cat("  [ERROR] No se pudo construir un modelo CFA válido para invarianza.\n")
+      } else {
+        modelo_spec <- paste(modelo_lines, collapse = "\n")
+        cat("\n  Modelo CFA utilizado:\n")
+        cat(modelo_spec, "\n")
+        
+        # --------------------------------------------------------------
+        # 2. Función para probar invarianza en una variable de grupo
+        # --------------------------------------------------------------
+        probar_invarianza <- function(var_grupo, datos_completos, modelo, umbral_cfi = 0.01) {
+          cat("\n", paste(rep("-",70), collapse=""), "\n")
+          cat(">>> Variable de agrupamiento:", var_grupo, "\n")
+          
+          # Verificar existencia y convertir a factor
+          if (!var_grupo %in% names(datos_completos)) {
+            cat("  [ERROR] Variable no encontrada en datos.\n")
+            return(NULL)
+          }
+          grupo_raw <- datos_completos[[var_grupo]]
+          if (!is.factor(grupo_raw)) grupo_raw <- as.factor(grupo_raw)
+          
+          # Eliminar observaciones con NA en la variable de grupo
+          idx_completos <- complete.cases(grupo_raw)
+          if (sum(idx_completos) < nrow(datos_completos)) {
+            cat(sprintf("  [INFO] Se eliminan %d casos con NA en %s\n", sum(!idx_completos), var_grupo))
+            datos_grupo <- datos_completos[idx_completos, ]
+            grupo <- droplevels(grupo_raw[idx_completos])
+          } else {
+            datos_grupo <- datos_completos
+            grupo <- grupo_raw
+          }
+          
+          niveles <- levels(grupo)
+          n_grupos <- length(niveles)
+          cat("  Grupos encontrados:", paste(niveles, collapse = ", "), "\n")
+          cat("  Tamaños de grupo:", paste(table(grupo), collapse = ", "), "\n")
+          
+          if (n_grupos < 2) {
+            cat("  [ADVERTENCIA] Menos de 2 grupos. Se omite.\n")
+            return(NULL)
+          }
+          
+          # Filtrar grupos con al menos 10 observaciones (recomendación)
+          grupos_validos <- niveles[table(grupo) >= 10]
+          if (length(grupos_validos) < 2) {
+            cat("  [ADVERTENCIA] Grupos con menos de 10 casos. No se puede estimar invarianza.\n")
+            return(NULL)
+          }
+          if (length(grupos_validos) < n_grupos) {
+            cat(sprintf("  [INFO] Se excluyen grupos pequeños: %s\n", paste(setdiff(niveles, grupos_validos), collapse=", ")))
+            idx_validos <- grupo %in% grupos_validos
+            datos_grupo <- datos_grupo[idx_validos, ]
+            grupo <- droplevels(grupo[idx_validos])
+            niveles <- grupos_validos
+            n_grupos <- length(niveles)
+          }
+          
+          # Estimador según normalidad multivariada (variable global del script)
+          estimador <- if (exists("normalidad_multivariada_ok") && !normalidad_multivariada_ok) "MLR" else "ML"
+          
+          tryCatch({
+            # Modelo configural (mismo patrón, parámetros libres)
+            fit_configural <- cfa(modelo, data = datos_grupo, group = var_grupo,
+                                  group.label = niveles, estimator = estimador)
+            
+            # Modelo métrico (cargas iguales)
+            fit_metrico <- cfa(modelo, data = datos_grupo, group = var_grupo,
+                               group.label = niveles, estimator = estimador,
+                               group.equal = "loadings")
+            
+            # Modelo escalar (cargas + interceptos iguales)
+            fit_escalar <- cfa(modelo, data = datos_grupo, group = var_grupo,
+                               group.label = niveles, estimator = estimador,
+                               group.equal = c("loadings", "intercepts"))
+            
+            # Extraer índices de ajuste
+            medidas <- function(fit) {
+              if (is.null(fit)) return(rep(NA, 7))
+              m <- fitMeasures(fit, c("chisq", "df", "cfi", "rmsea", "srmr", "aic", "bic"))
+              return(m)
+            }
+            m_conf <- medidas(fit_configural)
+            m_met <- medidas(fit_metrico)
+            m_esc <- medidas(fit_escalar)
+            
+            # Diferencias de CFI y RMSEA
+            delta_cfi_met <- m_met["cfi"] - m_conf["cfi"]
+            delta_cfi_esc <- m_esc["cfi"] - m_met["cfi"]
+            delta_rmsea_met <- m_met["rmsea"] - m_conf["rmsea"]
+            delta_rmsea_esc <- m_esc["rmsea"] - m_met["rmsea"]
+            
+            # Pruebas de chi-cuadrado anidadas (si no son MLR)
+            anova_met <- if (estimador == "ML") tryCatch(anova(fit_configural, fit_metrico), error=function(e) NULL) else NULL
+            anova_esc <- if (estimador == "ML") tryCatch(anova(fit_metrico, fit_escalar), error=function(e) NULL) else NULL
+            
+            # Mostrar resultados en consola
+            cat("\n--- AJUSTE POR MODELO ---\n")
+            cat(sprintf("Configural: χ²=%.3f, gl=%d, CFI=%.3f, RMSEA=%.3f, SRMR=%.3f\n",
+                        m_conf["chisq"], m_conf["df"], m_conf["cfi"], m_conf["rmsea"], m_conf["srmr"]))
+            cat(sprintf("Métrica   : χ²=%.3f, gl=%d, CFI=%.3f, RMSEA=%.3f, SRMR=%.3f\n",
+                        m_met["chisq"], m_met["df"], m_met["cfi"], m_met["rmsea"], m_met["srmr"]))
+            cat(sprintf("Escalar   : χ²=%.3f, gl=%d, CFI=%.3f, RMSEA=%.3f, SRMR=%.3f\n",
+                        m_esc["chisq"], m_esc["df"], m_esc["cfi"], m_esc["rmsea"], m_esc["srmr"]))
+            
+            cat("\n--- COMPARACIONES (ΔCFI, ΔRMSEA) ---\n")
+            cat(sprintf("Métrica vs Configural: ΔCFI = %+.4f, ΔRMSEA = %+.4f\n", delta_cfi_met, delta_rmsea_met))
+            cat(sprintf("Escalar vs Métrica   : ΔCFI = %+.4f, ΔRMSEA = %+.4f\n", delta_cfi_esc, delta_rmsea_esc))
+            
+            if (!is.null(anova_met)) {
+              cat(sprintf("  Prueba χ² anidada métrica: p = %.4f\n", anova_met[2, "Pr(>Chisq)"]))
+            }
+            if (!is.null(anova_esc)) {
+              cat(sprintf("  Prueba χ² anidada escalar: p = %.4f\n", anova_esc[2, "Pr(>Chisq)"]))
+            }
+            
+            # Interpretación según Cheung & Rensvold (2002) y Chen (2007)
+            cat("\n--- INTERPRETACIÓN ---\n")
+            if (delta_cfi_met >= -umbral_cfi) cat("  ✓ Invarianza métrica (CFI no empeora >0.01)\n") else cat("  ✗ No hay invarianza métrica\n")
+            if (delta_cfi_esc >= -umbral_cfi) cat("  ✓ Invarianza escalar (CFI no empeora >0.01)\n") else cat("  ✗ No hay invarianza escalar\n")
+            
+            # Tabla resumen para guardar
+            tabla_ajustes <- data.frame(
+              Modelo = c("Configural", "Métrica", "Escalar"),
+              χ2 = round(c(m_conf["chisq"], m_met["chisq"], m_esc["chisq"]), 3),
+              gl = c(m_conf["df"], m_met["df"], m_esc["df"]),
+              CFI = round(c(m_conf["cfi"], m_met["cfi"], m_esc["cfi"]), 4),
+              RMSEA = round(c(m_conf["rmsea"], m_met["rmsea"], m_esc["rmsea"]), 4),
+              SRMR = round(c(m_conf["srmr"], m_met["srmr"], m_esc["srmr"]), 4),
+              AIC = round(c(m_conf["aic"], m_met["aic"], m_esc["aic"]), 2),
+              BIC = round(c(m_conf["bic"], m_met["bic"], m_esc["bic"]), 2)
+            )
+            
+            tabla_diferencias <- data.frame(
+              Comparación = c("Métrica vs Configural", "Escalar vs Métrica"),
+              ΔCFI = round(c(delta_cfi_met, delta_cfi_esc), 4),
+              ΔRMSEA = round(c(delta_rmsea_met, delta_rmsea_esc), 4)
+            )
+            
+            # Guardar usando la función existente guardar_tabla
+            if (exists("guardar_tabla")) {
+              guardar_tabla(tabla_ajustes, paste0("10_invarianza_", var_grupo, "_ajustes"))
+              guardar_tabla(tabla_diferencias, paste0("10_invarianza_", var_grupo, "_diferencias"))
+            } else {
+              cat("\n  [INFO] Tablas no guardadas (falta función guardar_tabla).\n")
+              print(tabla_ajustes)
+              print(tabla_diferencias)
+            }
+            
+            # Guardar los modelos en variable global para inspección opcional
+            assign(paste0("fit_configural_", var_grupo), fit_configural, envir = .GlobalEnv)
+            assign(paste0("fit_metrico_", var_grupo), fit_metrico, envir = .GlobalEnv)
+            assign(paste0("fit_escalar_", var_grupo), fit_escalar, envir = .GlobalEnv)
+            
+            return(list(configural = fit_configural, metrico = fit_metrico, escalar = fit_escalar,
+                        tablas = list(ajustes = tabla_ajustes, diferencias = tabla_diferencias)))
+            
+          }, error = function(e) {
+            cat(sprintf("  [ERROR] En análisis de invarianza para %s: %s\n", var_grupo, e$message))
+            return(NULL)
+          })
+        }
+        
+        # --------------------------------------------------------------
+        # 3. Ejecutar para cada variable de grupo
+        # --------------------------------------------------------------
+        # Preparar data.frame completo que incluya los ítems y todas las sociodemográficas
+        # Usamos df_completo (original) pero aseguramos que los ítems estén numéricos
+        datos_para_invarianza <- df_completo[, c(nombres_items, vars_grupo_existentes), drop = FALSE]
+        for (col in nombres_items) datos_para_invarianza[[col]] <- as.numeric(datos_para_invarianza[[col]])
+        
+        resultados_invarianza <- list()
+        for (vg in vars_grupo_existentes) {
+          res <- probar_invarianza(vg, datos_para_invarianza, modelo_spec, umbral_cfi = 0.01)
+          if (!is.null(res)) resultados_invarianza[[vg]] <- res
+        }
+        
+        if (length(resultados_invarianza) == 0) {
+          cat("\n  [AVISO] No se pudo completar ningún análisis de invarianza.\n")
+        } else {
+          cat("\n  [OK] Análisis de invarianza finalizado para:", paste(names(resultados_invarianza), collapse=", "), "\n")
+        }
+        
+      } # fin de if modelo_spec válido
+    } else {
+      cat("\n  [SALTADO] No hay matriz de loadings (AFE) para construir el modelo multigrupo.\n")
+    }
   }
+} else {
+  cat("\n  [SALTADO] No se definieron variables de grupo o no hay datos. Para activar, define VARS_GRUPO <- c(\"sexo\", \"educacion\") en la sección de configuración.\n")
 }
 
 # =========================================================================
